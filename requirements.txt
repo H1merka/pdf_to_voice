@@ -1,0 +1,16 @@
+certifi==2025.6.15
+cffi==1.17.1
+charset-normalizer==3.4.2
+click==8.1.8
+colorama==0.4.6
+cryptography==45.0.5
+gTTS==2.5.4
+idna==3.10
+packaging==25.0
+pdf2image==1.17.0
+pdfminer.six==20250506
+pillow==11.3.0
+pycparser==2.22
+pytesseract==0.3.13
+requests==2.32.4
+urllib3==2.5.0
