@@ -4,7 +4,6 @@ import base64
 from pdf2image import convert_from_path
 import openai
 from dotenv import load_dotenv
-import subprocess
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -41,19 +40,19 @@ def extract_text_from_images(images):
         with open(temp_img_path, "rb") as image_file:
             b64_image = base64.b64encode(image_file.read()).decode("utf-8")
 
-        # Извлекаем текст без анализа, просто OCR
+        # Извлекаем текст — просто OCR
         response = openai.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {
                     "role": "system",
-                    "content": "Ты OCR-система. Распознай текст с изображения. Ничего не переводи и не комментируй."
+                    "content": "Ты OCR-система. Распознай и верни весь текст с изображения без перевода и комментариев."
                 },
                 {
                     "role": "user",
                     "content": [
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}},
-                        {"type": "text", "text": "Распознай и верни весь текст с изображения."}
+                        {"type": "text", "text": "Распознай текст и верни его полностью."}
                     ]
                 }
             ],
@@ -63,94 +62,54 @@ def extract_text_from_images(images):
         extracted = response.choices[0].message.content.strip()
         all_text += extracted + "\n\n"
 
-    print("🧠 Генерация общей выжимки на русском языке...")
+    print("🧠 Сжатие текста до ~50% длины с сохранением деталей...")
 
-    # Запрос к модели для генерации общей выжимки
+    # Шаг 2: Сжать текст до ~⅔ длины, сохранив смысл и детали
+    compression_prompt = (
+        "Прочитай текст ниже и сократи его до 7000 символов. Сохрани структуру, стиль и все ключевые факты. "
+        "Тон должен остаться таким же, как в оригинале, а содержание — полным и логичным. "
+        "Получившийся текст должен быть полностью на русском языке."
+    )
+
     summary_response = openai.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {
-                "role": "system",
-                "content": (
-                    "Ты помощник-референт. Прочитай следующий текст и сделай краткое, связное содержание "
-                    "на русском языке. Сохрани только основную суть, убери второстепенные детали."
-                )
-            },
-            {
-                "role": "user",
-                "content": all_text[:16000]  # ограничим для безопасного количества токенов
-            }
+            {"role": "system", "content": compression_prompt},
+            {"role": "user", "content": all_text}  # безопасный лимит
         ],
-        max_tokens=2048
+        max_tokens=4096  # ~2/3 от 4096 токенов — ориентировочно
     )
 
     final_summary = summary_response.choices[0].message.content.strip()
+
     return final_summary
 
 
-def split_text(text, max_size=4000):
-    paragraphs = text.split('\n\n')
-    chunks = []
-    current_chunk = ""
-    for para in paragraphs:
-        if len(current_chunk) + len(para) + 2 <= max_size:
-            current_chunk += para + "\n\n"
-        else:
-            if current_chunk:
-                chunks.append(current_chunk.strip())
-            # Если один абзац слишком большой - разбиваем его по max_size
-            if len(para) > max_size:
-                for i in range(0, len(para), max_size):
-                    chunks.append(para[i:i + max_size])
-                current_chunk = ""
-            else:
-                current_chunk = para + "\n\n"
-    if current_chunk:
-        chunks.append(current_chunk.strip())
-    return chunks
+def text_to_speech_single(text, filename="final_voice.mp3"):
+    if len(text) > 12000:
+        print("❌ Текст слишком длинный для озвучивания одним куском. Сократите его.")
+        sys.exit(1)
 
+    print("🎤 Генерация голосового сообщения из всего текста...")
 
-def text_to_speech_chunks(text, output_dir="audio_chunks"):
-    os.makedirs(output_dir, exist_ok=True)
-    chunks = split_text(text)
-    audio_paths = []
-    for i, chunk in enumerate(chunks):
-        print(f"🎤 Генерация голосового сообщения: часть {i+1}/{len(chunks)}...")
-        response = openai.audio.speech.create(
-            model="tts-1-hd",
-            voice="nova",
-            input=chunk
-        )
-        audio_path = os.path.join(output_dir, f"part_{i+1}.mp3")
-        with open(audio_path, "wb") as f:
-            f.write(response.content)
-        audio_paths.append(audio_path)
-    return audio_paths
+    response = openai.audio.speech.create(
+        model="tts-1-hd",
+        voice="nova",
+        input=text
+    )
 
+    with open(filename, "wb") as f:
+        f.write(response.content)
 
-def merge_audio_chunks_ffmpeg(audio_paths, output_path="final_voice.mp3"):
-    print("🔊 Склейка аудиочастей через ffmpeg...")
-
-    list_file = "audio_list.txt"
-    with open(list_file, "w", encoding="utf-8") as f:
-        for path in audio_paths:
-            f.write(f"file '{os.path.abspath(path)}'\n")
-
-    subprocess.run([
-        "ffmpeg", "-f", "concat", "-safe", "0",
-        "-i", list_file,
-        "-c", "copy", output_path
-    ], check=True)
-
-    print(f"✅ Итоговый файл сохранён: {output_path}")
+    print(f"✅ Итоговый аудиофайл сохранён: {os.path.abspath(filename)}")
 
 
 # Основной запуск
 if __name__ == "__main__":
-    text = extract_text_from_images(images)
-    with open("output_text.txt", "w", encoding="utf-8") as f:
-        f.write(text)
+    final_text = extract_text_from_images(images)
 
-    audio_files = text_to_speech_chunks(text)
-    merge_audio_chunks_ffmpeg(audio_files)
+    with open("output_text.txt", "w", encoding="utf-8") as f:
+        f.write(final_text)
+
+    text_to_speech_single(final_text)
     print("✅ Готово! Сохранены файлы: output_text.txt и final_voice.mp3")
