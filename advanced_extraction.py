@@ -1,46 +1,55 @@
 import os
 import sys
 import base64
+from io import BytesIO
 from pdf2image import convert_from_path
 import openai
 from dotenv import load_dotenv
 
-# Загрузка переменных окружения
+
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-# Проверка аргументов командной строки
 if len(sys.argv) != 2:
-    print("❌ Использование: python script.py <путь_к_pdf>")
+    print("Usage: python script.py <pdf_path>")
     sys.exit(1)
 
 PDF_PATH = sys.argv[1]
 
 if not os.path.isfile(PDF_PATH):
-    print(f"❌ Файл не найден: {PDF_PATH}")
+    print(f"File is not found: {PDF_PATH}")
     sys.exit(1)
 
-# Создание временной директории для изображений
-TEMP_IMG_DIR = "pdf_pages"
-os.makedirs(TEMP_IMG_DIR, exist_ok=True)
-
-# Шаг 1. Конвертация PDF в изображения
-print("📄 Конвертация PDF в изображения...")
-images = convert_from_path(PDF_PATH, dpi=300, fmt='jpeg', output_folder=TEMP_IMG_DIR)
+# Convert PDF pages to a list of PIL images in memory
+images = convert_from_path(PDF_PATH, dpi=300, fmt='jpeg')
 
 
-def extract_text_from_images(images):
-    print("🔍 Распознавание текста с изображений...")
+def extract_func(images):
+    """
+    Extract text from a list of images by sending each image to the OpenAI GPT-4o model as a base64-encoded
+    image embedded in the chat message. The model acts as an OCR system and returns recognized text.
+
+    After extracting text from all pages, it sends the combined text back to the model for compression and summarization,
+    preserving style and key facts, with the output fully in Russian.
+
+    Args:
+        images (list): List of PIL Image objects representing PDF pages.
+
+    Returns:
+        str: The compressed and summarized Russian text extracted from the PDF.
+    """
     all_text = ""
 
-    for i, img in enumerate(images):
-        temp_img_path = f"{TEMP_IMG_DIR}/temp_page_{i}.jpg"
-        img.save(temp_img_path)
+    for _, img in enumerate(images):
+        # Save image to bytes buffer in JPEG format without writing to disk
+        img_bytes = BytesIO()
+        img.save(img_bytes, format='JPEG')
+        img_bytes.seek(0)
 
-        with open(temp_img_path, "rb") as image_file:
-            b64_image = base64.b64encode(image_file.read()).decode("utf-8")
+        # Encode image bytes to base64 string for embedding in OpenAI message
+        b64_image = base64.b64encode(img_bytes.read()).decode("utf-8")
 
-        # Извлекаем текст — просто OCR
+        # Send image and instruction to GPT-4o model acting as OCR
         response = openai.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -62,12 +71,12 @@ def extract_text_from_images(images):
         extracted = response.choices[0].message.content.strip()
         all_text += extracted + "\n\n"
 
-    print("🧠 Сжатие текста до ~50% длины с сохранением деталей...")
-
-    # Шаг 2: Сжать текст до ~⅔ длины, сохранив смысл и детали
+    # Prompt to compress and summarize the full extracted text, preserving style and meaning
     compression_prompt = (
-        "Прочитай текст ниже и сократи его до 7000 символов. Сохрани структуру, стиль и все ключевые факты. "
-        "Тон должен остаться таким же, как в оригинале, а содержание — полным и логичным. "
+        "Прочитай текст ниже и сократи его до 7000 символов. "
+        "Сохрани структуру, стиль и все ключевые факты. "
+        "Тон должен остаться таким же, как в оригинале, "
+        "а содержание — полным и логичным. "
         "Получившийся текст должен быть полностью на русском языке."
     )
 
@@ -75,9 +84,9 @@ def extract_text_from_images(images):
         model="gpt-4o",
         messages=[
             {"role": "system", "content": compression_prompt},
-            {"role": "user", "content": all_text}  # безопасный лимит
+            {"role": "user", "content": all_text}
         ],
-        max_tokens=4096  # ~2/3 от 4096 токенов — ориентировочно
+        max_tokens=4096
     )
 
     final_summary = summary_response.choices[0].message.content.strip()
@@ -85,31 +94,41 @@ def extract_text_from_images(images):
     return final_summary
 
 
-def text_to_speech_single(text, filename="final_voice.mp3"):
+def tts_func(text, filename="final_voice.mp3"):
+    """
+    Convert given text into speech audio using OpenAI's TTS model and save to a file.
+
+    Args:
+        text (str): Text to be converted to speech.
+        filename (str): Output filename for the generated audio (default: "final_voice.mp3").
+
+    Exits with error if text is too long to process in one request.
+    """
     if len(text) > 12000:
-        print("❌ Текст слишком длинный для озвучивания одним куском. Сократите его.")
+        print(
+            "Text is too long."
+        )
         sys.exit(1)
 
-    print("🎤 Генерация голосового сообщения из всего текста...")
-
+    # Request TTS audio generation from OpenAI
     response = openai.audio.speech.create(
         model="tts-1-hd",
         voice="nova",
         input=text
     )
 
+    # Write audio bytes to output file
     with open(filename, "wb") as f:
         f.write(response.content)
 
-    print(f"✅ Итоговый аудиофайл сохранён: {os.path.abspath(filename)}")
 
-
-# Основной запуск
 if __name__ == "__main__":
-    final_text = extract_text_from_images(images)
+    # Extract and compress text from PDF images
+    final_text = extract_func(images)
 
+    # Save extracted and compressed text to output file
     with open("output_text.txt", "w", encoding="utf-8") as f:
         f.write(final_text)
 
-    text_to_speech_single(final_text)
-    print("✅ Готово! Сохранены файлы: output_text.txt и final_voice.mp3")
+    # Generate speech audio from the extracted text
+    tts_func(final_text)
