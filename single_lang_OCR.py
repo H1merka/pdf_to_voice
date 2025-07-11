@@ -5,7 +5,7 @@ import sys
 import os
 
 
-def pdf_to_audio(pdf_path, audio_path='output.mp3', lang='ru'):
+def pdf_to_audio(pdf_path: str, audio_path: str = 'output.mp3', lang: str = 'ru') -> None:
     """
     Converts a PDF file to an audio message using OCR and text-to-speech.
 
@@ -19,9 +19,9 @@ def pdf_to_audio(pdf_path, audio_path='output.mp3', lang='ru'):
         images = convert_from_path(pdf_path)
 
         # Extract text from each image using OCR
-        total_text = ""
+        total_text: str = ""
         for image in images:
-            text = pytesseract.image_to_string(image, lang='rus')  # Use 'rus' for Russian OCR
+            text: str = pytesseract.image_to_string(image, lang='rus')  # Use 'rus' for Russian OCR
             total_text += text + "\n"
 
         # Convert the extracted text to speech
@@ -39,8 +39,8 @@ if __name__ == "__main__":
         print("Usage: python pdf_to_audio.py <path_to_pdf> [path_to_audio_output]")
         sys.exit(1)
 
-    pdf_path = sys.argv[1]
-    audio_path = sys.argv[2] if len(sys.argv) > 2 else 'output.mp3'
+    pdf_path: str = sys.argv[1]
+    audio_path: str = sys.argv[2] if len(sys.argv) > 2 else 'output.mp3'
 
     # Check if the PDF file exists
     if not os.path.exists(pdf_path):

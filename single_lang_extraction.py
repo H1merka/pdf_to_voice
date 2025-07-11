@@ -4,7 +4,7 @@ from pdfminer.high_level import extract_text
 from gtts import gTTS
 
 
-def extract_text_from_pdf(pdf_path):
+def extract_text_from_pdf(pdf_path: str) -> str:
     """
     Extracts text content from a PDF file.
 
@@ -17,7 +17,7 @@ def extract_text_from_pdf(pdf_path):
     return extract_text(pdf_path)
 
 
-def generate_audio_from_text(text, output_audio_path, lang='ru'):
+def generate_audio_from_text(text: str, output_audio_path: str, lang: str = 'ru') -> None:
     """
     Generates an audio file from the provided text using gTTS.
 
@@ -31,7 +31,7 @@ def generate_audio_from_text(text, output_audio_path, lang='ru'):
     print(f"Audio file saved as: {output_audio_path}")
 
 
-def main():
+def main() -> None:
     """
     Main function to process a PDF file and generate an audio file from its text content.
     The path to the PDF file should be provided as a command-line argument.
@@ -40,15 +40,15 @@ def main():
         print("Usage: python script.py <path_to_pdf>")
         return
 
-    pdf_path = sys.argv[1]
-    audio_output_path = "output_voice.mp3"
+    pdf_path: str = sys.argv[1]
+    audio_output_path: str = "output_voice.mp3"
 
     if not os.path.isfile(pdf_path):
         print(f"File not found: {pdf_path}")
         return
 
     print("Extracting text from PDF...")
-    text = extract_text_from_pdf(pdf_path)
+    text: str = extract_text_from_pdf(pdf_path)
 
     if not text.strip():
         print("Failed to extract text from the PDF.")
